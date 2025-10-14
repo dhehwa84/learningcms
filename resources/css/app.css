@@ -1,3 +1,10 @@
+@import "bootstrap/dist/css/bootstrap.min.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+
+/* your extra tweaks below */
+body { background: #f7f7f9; }
+.navbar-brand { font-weight: 700; }
+
