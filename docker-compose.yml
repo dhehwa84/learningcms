@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  cms_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cms_api_app:latest
+    container_name: cms_api_app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www:cached
+      - ./php.ini:/usr/local/etc/php/conf.d/custom.ini:ro
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - LOG_CHANNEL=stack
+      - DB_HOST=cms_db
+      - DB_PORT=3306
+      - REDIS_HOST=cms_redis
+      - MINIO_HOST=cms_minio
+    expose:
+      - "9000"
+    networks:
+      - appnet
+
+  cms_nginx:
+    image: nginx:stable-alpine
+    container_name: cms_nginx
+    restart: unless-stopped
+    depends_on:
+      - cms_api
+    volumes:
+      - ./:/var/www:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "9080:80"
+    networks:
+      - appnet
+
+  cms_db:
+    image: mysql:8.0
+    container_name: cms_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: laravel
+      MYSQL_USER: laravel
+      MYSQL_PASSWORD: laravelpass
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "13307:3306"   # changed host port to 13307 to avoid conflict
+    networks:
+      - appnet
+
+  cms_redis:
+    image: redis:7-alpine
+    container_name: cms_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "16380:6379"   # changed host port to 16380
+    networks:
+      - appnet
+
+  cms_minio:
+    image: minio/minio:latest
+    container_name: cms_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    ports:
+      - "19000:9000"   # host 19000 -> container 9000 (MinIO server)
+      - "19001:9001"   # host 19001 -> container 9001 (MinIO console)
+    networks:
+      - appnet
+
+  cms_mailhog:
+    image: mailhog/mailhog
+    container_name: cms_mailhog
+    restart: unless-stopped
+    ports:
+      - "9025:1025"
+      - "9081:8025"
+    networks:
+      - appnet
+
+volumes:
+  db_data:
+  redis_data:
+  minio_data:
+
+networks:
+  appnet:
+    driver: bridge
+
