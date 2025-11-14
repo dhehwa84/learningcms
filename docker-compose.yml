@@ -65,10 +65,9 @@ services:
       - "16380:6379"   # changed host port to 16380
     networks:
       - appnet
-
-  cms_minio:
+  cmsminio:
     image: minio/minio:latest
-    container_name: cms_minio
+    container_name: cmsminio
     restart: unless-stopped
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -76,9 +75,10 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+      - ./minio-setup.sh:/etc/minio-setup.sh:ro
     ports:
-      - "19000:9000"   # host 19000 -> container 9000 (MinIO server)
-      - "19001:9001"   # host 19001 -> container 9001 (MinIO console)
+      - "19000:9000"
+      - "19001:9001"
     networks:
       - appnet
 

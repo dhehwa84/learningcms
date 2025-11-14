@@ -48,10 +48,20 @@ RUN groupadd -g ${GID} appuser || true \
 # Copy application code
 COPY . /var/www
 
-# Set ownership
-RUN chown -R appuser:appuser /var/www && chmod -R 755 /var/www
+# Set proper Laravel permissions BEFORE switching to non-root user
+RUN mkdir -p /var/www/storage /var/www/bootstrap/cache \
+ && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
+ && chmod -R 775 /var/www/storage /var/www/bootstrap/cache \
+ && mkdir -p /var/www/storage/framework/views /var/www/storage/framework/sessions /var/www/storage/framework/cache \
+ && mkdir -p /var/www/storage/logs /var/www/storage/app/public \
+ && touch /var/www/storage/logs/laravel.log \
+ && chown -R www-data:www-data /var/www/storage/logs /var/www/storage/framework \
+ && chmod -R 775 /var/www/storage/logs /var/www/storage/framework
 
-# Switch to non-root user
+# Set ownership for the entire application to appuser for composer
+RUN chown -R appuser:appuser /var/www
+
+# Switch to non-root user for composer install
 USER appuser
 
 # Ensure composer runs without interactive warnings about superuser in CI
@@ -66,15 +76,28 @@ RUN if [ -f composer.lock ]; then \
       composer install --no-interaction --prefer-dist --optimize-autoloader; \
     fi
 
-# Switch back to root to set correct permissions for volumes at runtime
+# Switch back to root to set final permissions for runtime
 USER root
 
-# Ensure storage and bootstrap cache directories exist and are writable
-RUN mkdir -p /var/www/storage /var/www/bootstrap/cache \
- && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+# Final permission setup for Laravel to run properly
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
+ && chmod -R 775 /var/www/storage /var/www/bootstrap/cache \
+ && chown www-data:www-data /var/www/storage/logs/laravel.log \
+ && chmod 664 /var/www/storage/logs/laravel.log
+
+# Ensure the storage and bootstrap directories are writable by www-data
+RUN chgrp -R www-data /var/www/storage /var/www/bootstrap/cache \
+ && chmod -R ug+rwx /var/www/storage /var/www/bootstrap/cache
+
+# Create a script to handle permissions at runtime (optional but recommended)
+RUN echo '#!/bin/bash\n\
+chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache\n\
+chmod -R 775 /var/www/storage /var/www/bootstrap/cache\n\
+exec "$@"' > /usr/local/bin/start.sh \
+ && chmod +x /usr/local/bin/start.sh
 
 # Expose php-fpm port (internal)
 EXPOSE 9000
 
-# Use php-fpm as default command
-CMD ["php-fpm"]
+# Use the custom start script to ensure permissions are set on container start
+CMD ["/usr/local/bin/start.sh", "php-fpm"]
