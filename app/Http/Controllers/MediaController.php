@@ -8,6 +8,7 @@ use App\Models\DefaultImage;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class MediaController extends Controller
 {
@@ -41,6 +42,7 @@ class MediaController extends Controller
         ]);
     }
 
+    // Also update the store method to ensure clean paths
     public function store(Request $request): JsonResponse
     {
         $request->validate([
@@ -70,7 +72,7 @@ class MediaController extends Controller
                 throw new \Exception('Failed to store file in MinIO');
             }
 
-            // Generate public URL - Use external MinIO port or ngrok URL
+            // Generate public URL
             $publicUrl = $this->generatePublicUrl($path);
 
             $mediaData = [
@@ -113,8 +115,13 @@ class MediaController extends Controller
     private function generatePublicUrl(string $path): string
     {
         $baseUrl = rtrim(env('MINIO_NGROK_URL', 'http://localhost:19000'), '/');
-        return "{$baseUrl}/minio/uploads/{$path}";
+        
+        // Remove any existing /minio/ from the path to avoid duplication
+        $cleanPath = str_replace('minio/', '', $path);
+        
+        return "{$baseUrl}/uploads/{$cleanPath}";
     }
+
     /**
      * Transform media URLs to be publicly accessible
      */
@@ -122,9 +129,10 @@ class MediaController extends Controller
     {
         $mediaArray = $media->toArray();
         
-        // Transform URLs to public URLs
-        $mediaArray['url'] = $this->generatePublicUrl($media->file_path);
-        $mediaArray['thumbnail'] = $this->generatePublicUrl($media->file_path);
+        // Generate clean URL without /minio/
+        $cleanUrl = $this->generatePublicUrl($media->file_path);
+        $mediaArray['url'] = $cleanUrl;
+        $mediaArray['thumbnail'] = $cleanUrl;
         
         return $mediaArray;
     }

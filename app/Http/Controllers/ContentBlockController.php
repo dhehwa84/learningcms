@@ -22,19 +22,23 @@ class ContentBlockController extends Controller
     {
         $this->authorize('update', $contentBlock->accordion->unit->section->project);
 
-        $validated = $request->validate([
+        // Clean media URLs before validation
+        $cleanedData = $this->cleanMediaUrls($request->all());
+        $cleanedRequest = new Request($cleanedData);
+        
+        $validated = $cleanedRequest->validate([
             'type' => 'sometimes|required|in:text,richtext,image,video,audio,grid',
             'content' => 'sometimes|nullable|string',
             'layout' => 'sometimes|nullable|in:single,two-column,grid',
             'order' => 'sometimes|integer|min:0',
         ]);
 
-        DB::transaction(function () use ($contentBlock, $validated, $request) {
+        DB::transaction(function () use ($contentBlock, $validated, $cleanedRequest) {
             $contentBlock->update($validated);
 
             // Handle single media if type is image/video/audio
-            if (in_array($contentBlock->type, ['image', 'video', 'audio']) && $request->has('media')) {
-                $mediaData = $request->validate([
+            if (in_array($contentBlock->type, ['image', 'video', 'audio']) && $cleanedRequest->has('media')) {
+                $mediaData = $cleanedRequest->validate([
                     'media.type' => 'required|in:image,video,audio',
                     'media.url' => 'required|string|max:500',
                     'media.alt' => 'nullable|string|max:255',
@@ -82,6 +86,20 @@ class ContentBlockController extends Controller
             'message' => 'Content block updated successfully',
             'data' => $contentBlock->fresh('media')
         ]);
+    }
+
+    /**
+     * Clean media URLs by removing /minio/ from them
+     */
+    private function cleanMediaUrls(array $data): array
+    {
+        array_walk_recursive($data, function (&$value, $key) {
+            if (is_string($value) && str_contains($value, '/minio/')) {
+                $value = str_replace('/minio/', '/', $value);
+            }
+        });
+        
+        return $data;
     }
 
     /**

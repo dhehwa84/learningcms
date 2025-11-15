@@ -38,6 +38,7 @@ class UnitController extends Controller
             'grade' => 'nullable|string|max:100',
             'theme' => 'nullable|string|max:255',
             'order' => 'required|integer|min:0',
+            'folder_name' => 'sometimes|string|max:100|regex:/^[a-z0-9\-]+$/|unique:units,folder_name',
         ]);
 
         $unit = $section->units()->create($validated);
@@ -62,22 +63,31 @@ class UnitController extends Controller
 
     public function update(Request $request, $id): JsonResponse
     {
-        // dd($request->all());
         $unit = Unit::findOrFail($id);
         $this->authorize('update', $unit->section->project);
 
-        $validated = $request->validate($this->getValidationRules());
+        // Clean the incoming data before validation
+        $cleanedData = $this->cleanMediaUrls($request->all());
+        
+        // Use the original request for validation, but merge cleaned data
+        $validationRequest = new Request($cleanedData);
+        
+        // Get validation rules and validate
+        $validationRules = $this->getValidationRules();
+        $validated = $validationRequest->validate($validationRules);
 
         DB::transaction(function () use ($unit, $validated) {
-            // Update unit basic fields
+            // Update unit basic fields including folder_name
             $unit->update([
                 'title' => $validated['title'],
                 'grade' => $validated['grade'] ?? null,
                 'theme' => $validated['theme'] ?? null,
                 'order' => $validated['order'] ?? 0,
+                'folder_name' => $validated['folder_name'] ?? $unit->folder_name,
+                'header_config' => $validated['header_config'] ?? null,
             ]);
 
-            // Update header media
+            // Update header media with cleaned URL
             if (isset($validated['header_media'])) {
                 $unit->headerMedia()->updateOrCreate(
                     ['unit_id' => $unit->id],
@@ -98,7 +108,7 @@ class UnitController extends Controller
             foreach ($validated['accordions'] ?? [] as $accordionData) {
                 $accordion = $unit->accordions()->create([
                     'title' => $accordionData['title'],
-                    'icon_url' => $accordionData['icon_url'] ?? null,
+                    'icon_url' => $accordionData['icon_url'] ?? '/media/icons/book.svg', // Default icon
                     'order' => $accordionData['order']
                 ]);
 
@@ -143,7 +153,7 @@ class UnitController extends Controller
                         'title' => $exerciseData['title'] ?? null,
                         'order' => $exerciseData['order'],
                         'question_numbering' => $exerciseData['question_numbering'] ?? '123',
-                        'labels' => $exerciseData['labels'] ?? null, // This will use the setter
+                        'labels' => $exerciseData['labels'] ?? null,
                     ]);
 
                     // Add questions
@@ -151,7 +161,7 @@ class UnitController extends Controller
                         $exercise->questions()->create($questionData);
                     }
 
-                    // Add drag-match items - UPDATED TO MATCH FRONTEND FORMAT
+                    // Add drag-match items
                     foreach ($exerciseData['drag_match_items'] ?? [] as $dragMatchData) {
                         $exercise->dragMatchItems()->create([
                             'order' => $dragMatchData['order'],
@@ -177,6 +187,18 @@ class UnitController extends Controller
                 'accordions.exercises.dragMatchItems'
             ])
         ]);
+    }
+
+
+    private function cleanMediaUrls(array $data): array
+    {
+        array_walk_recursive($data, function (&$value, $key) {
+            if (is_string($value) && str_contains($value, '/minio/')) {
+                $value = str_replace('/minio/', '/', $value);
+            }
+        });
+        
+        return $data;
     }
 
     public function destroy(Unit $unit): JsonResponse
@@ -211,6 +233,13 @@ class UnitController extends Controller
             'grade' => 'nullable|string|max:100',
             'theme' => 'nullable|string|max:255',
             'order' => 'integer|min:0',
+            'folder_name' => 'sometimes|required|string|max:100|regex:/^[a-z0-9\-]+$/',            
+            // Header Config Validation
+            'header_config' => 'sometimes|nullable|array',
+            'header_config.main_heading' => 'sometimes|string|max:255',
+            'header_config.sub_heading' => 'sometimes|string|max:500',
+            'header_config.objectives_label' => 'sometimes|string|max:255',
+            'header_config.objectives_description' => 'sometimes|string|max:1000',
             
             // Header Media
             'header_media.type' => 'nullable|in:audio,video,image',
@@ -226,7 +255,7 @@ class UnitController extends Controller
             // Accordions
             'accordions' => 'array',
             'accordions.*.title' => 'required|string|max:255',
-            'accordions.*.icon_url' => 'nullable|string|max:500',
+            'accordions.*.icon_url' => 'sometimes|nullable|string|max:500', // Custom icon support
             'accordions.*.order' => 'required|integer|min:0',
             
             // Content Blocks
@@ -235,6 +264,13 @@ class UnitController extends Controller
             'accordions.*.content.*.order' => 'required|integer|min:0',
             'accordions.*.content.*.content' => 'nullable|string',
             'accordions.*.content.*.layout' => 'nullable|in:single,two-column,grid',
+            
+            // Grid Items
+            'accordions.*.content.*.grid_items' => 'nullable|array',
+            'accordions.*.content.*.grid_items.*.type' => 'required|in:image,text',
+            'accordions.*.content.*.grid_items.*.url' => 'required_if:accordions.*.content.*.grid_items.*.type,image|string|max:500',
+            'accordions.*.content.*.grid_items.*.alt' => 'nullable|string|max:255',
+            'accordions.*.content.*.grid_items.*.caption' => 'nullable|string',
             
             // Exercises
             'accordions.*.exercises' => 'array',
@@ -250,8 +286,6 @@ class UnitController extends Controller
             'accordions.*.exercises.*.labels.correct_message' => 'sometimes|string|max:255',
             'accordions.*.exercises.*.labels.incorrect_message' => 'sometimes|string|max:255',
             'accordions.*.exercises.*.labels.incomplete_message' => 'sometimes|string|max:255',
-            
-            // Drag-Match Specific Labels
             'accordions.*.exercises.*.labels.drag_instruction' => 'sometimes|string|max:500',
             'accordions.*.exercises.*.labels.left_column_label' => 'sometimes|string|max:100',
             'accordions.*.exercises.*.labels.right_column_label' => 'sometimes|string|max:100',
@@ -265,7 +299,7 @@ class UnitController extends Controller
             'accordions.*.exercises.*.questions.*.correct_answer' => 'nullable|string',
             'accordions.*.exercises.*.questions.*.correct_answers' => 'nullable|array',
             
-            // Drag Match Items - UPDATED TO MATCH FRONTEND FORMAT
+            // Drag Match Items
             'accordions.*.exercises.*.drag_match_items' => 'nullable|array',
             'accordions.*.exercises.*.drag_match_items.*.order' => 'required|integer|min:0',
             'accordions.*.exercises.*.drag_match_items.*.left_side.type' => 'required|in:text,image',
@@ -274,13 +308,6 @@ class UnitController extends Controller
             'accordions.*.exercises.*.drag_match_items.*.right_side.type' => 'required|in:text,image',
             'accordions.*.exercises.*.drag_match_items.*.right_side.value' => 'required|string',
             'accordions.*.exercises.*.drag_match_items.*.right_side.alt' => 'nullable|string',
-
-            // Grid items validation
-            'accordions.*.content.*.grid_items' => 'nullable|array',
-            'accordions.*.content.*.grid_items.*.type' => 'required|in:image,text',
-            'accordions.*.content.*.grid_items.*.url' => 'required_if:accordions.*.content.*.grid_items.*.type,image|string|max:500',
-            'accordions.*.content.*.grid_items.*.alt' => 'nullable|string|max:255',
-            'accordions.*.content.*.grid_items.*.caption' => 'nullable|string',
         ];
     }
 }
