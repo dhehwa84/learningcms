@@ -24,9 +24,10 @@ class MediaController extends Controller
             $query->where('filename', 'like', '%' . $request->search . '%');
         }
 
-        $media = $query->paginate(20);
+        // Use requested per_page or default to 20
+        $perPage = $request->get('per_page', 20);
+        $media = $query->paginate($perPage);
 
-        // Transform URLs to be publicly accessible
         $transformedItems = collect($media->items())->map(function ($mediaItem) {
             return $this->transformMediaUrls($mediaItem);
         });

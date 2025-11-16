@@ -53,12 +53,25 @@ class UnitController extends Controller
             'objectives',
             'accordions.content.media',
             'accordions.exercises.questions',
-            'accordions.exercises.dragMatchItems' // Make sure this is included
+            'accordions.exercises.dragMatchItems'
         ])->findOrFail($id);
 
         $this->authorize('view', $unit->section->project);
 
-        return response()->json($unit);
+        // Test 1: Basic array conversion
+        try {
+            $unitArray = $unit->toArray();
+            return response()->json($unitArray);
+        } catch (\Exception $e) {
+            // If that fails, try minimal data
+            return response()->json([
+                'id' => $unit->id,
+                'title' => $unit->title,
+                'section_id' => $unit->section_id,
+                'objectives_count' => $unit->objectives->count(),
+                'accordions_count' => $unit->accordions->count(),
+            ]);
+        }
     }
 
     public function update(Request $request, $id): JsonResponse

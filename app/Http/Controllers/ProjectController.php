@@ -42,13 +42,22 @@ class ProjectController extends Controller
         return response()->json($project, 201);
     }
 
-    public function show(Project $project): JsonResponse
+   public function show(Project $project): JsonResponse
     {
         $this->authorize('view', $project);
 
         $project->load(['sections.units']);
-
-        return response()->json($project);
+        
+        // Debug: try converting to array first
+        try {
+            $projectArray = $project->toArray();
+            return response()->json($projectArray);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to serialize project',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function update(Request $request, Project $project): JsonResponse
