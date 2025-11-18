@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable
 {
@@ -18,6 +19,8 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'status',
+        'last_login'
     ];
 
     protected $hidden = [
@@ -27,6 +30,7 @@ class User extends Authenticatable
 
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'last_login' => 'datetime',
     ];
 
     public function isAdmin()
@@ -40,18 +44,28 @@ class User extends Authenticatable
     }
 
     // Relationships
-    public function projects()
+    public function projects(): HasMany
     {
         return $this->hasMany(Project::class);
     }
 
-    public function media()
+    public function media(): HasMany
     {
         return $this->hasMany(Media::class);
     }
 
-    public function labels()
+    public function labels(): HasMany
     {
         return $this->hasMany(Label::class);
+    }
+
+    public function teamMemberships(): HasMany
+    {
+        return $this->hasMany(ProjectTeamMember::class);
+    }
+
+    public function signOffProjects(): HasMany
+    {
+        return $this->hasMany(Project::class, 'sign_off_person_id');
     }
 }

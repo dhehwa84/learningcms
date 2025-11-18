@@ -17,6 +17,11 @@ use App\Http\Controllers\ObjectiveController;
 use App\Http\Controllers\QuestionController;
 use App\Http\Controllers\ReorderController;
 use App\Http\Controllers\UnitHeaderMediaController;
+use App\Http\Controllers\ProjectStatusController;
+use App\Http\Controllers\ProjectTeamController;
+use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -29,13 +34,27 @@ Route::prefix('v1')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/user', [AuthController::class, 'user']);
 
-        // Projects
+        // ==================== PROJECT MANAGEMENT ====================
+        // Project Statuses
+        Route::get('/project-statuses', [ProjectStatusController::class, 'index']);
+        
+        // Enhanced Projects with team management
         Route::get('/projects', [ProjectController::class, 'index']);
         Route::post('/projects', [ProjectController::class, 'store']);
         Route::get('/projects/{project}', [ProjectController::class, 'show']);
         Route::put('/projects/{project}', [ProjectController::class, 'update']);
         Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
 
+        // Project Team Management
+        Route::prefix('projects/{project}')->group(function () {
+            Route::post('/team', [ProjectTeamController::class, 'addMember']);
+            Route::patch('/team/{teamMember}', [ProjectTeamController::class, 'updateMemberRole']);
+            Route::delete('/team/{teamMember}', [ProjectTeamController::class, 'removeMember']);
+            Route::patch('/sign-off', [ProjectTeamController::class, 'updateSignOffPerson']);
+            Route::get('/access', [ProjectTeamController::class, 'checkAccess']);
+        });
+
+        // ==================== CONTENT MANAGEMENT ====================
         // Sections
         Route::get('/projects/{project}/sections', [SectionController::class, 'index']);
         Route::post('/projects/{project}/sections', [SectionController::class, 'store']);
@@ -98,12 +117,46 @@ Route::prefix('v1')->group(function () {
         Route::patch('/unit-header-media/{unitHeaderMedia}', [UnitHeaderMediaController::class, 'update']);
         Route::delete('/unit-header-media/{unitHeaderMedia}', [UnitHeaderMediaController::class, 'destroy']);
 
-        // Admin only routes
-        Route::middleware('admin')->group(function () {
-            // Admin specific endpoints can be added here
-            Route::get('/admin/users', function () {
-                return response()->json(['message' => 'Admin access']);
+      // ==================== ADMIN ROUTES ====================
+        Route::middleware('admin')->prefix('admin')->group(function () {
+            // User Management
+            Route::apiResource('users', UserManagementController::class);
+            Route::post('/users/{user}/reset-password', [UserManagementController::class, 'resetPassword']);
+            Route::patch('/users/{user}/role', [UserManagementController::class, 'updateRole']);
+
+            // Project Status Management (Admin only)
+            Route::apiResource('project-statuses', ProjectStatusController::class)->except(['index', 'show']);
+            Route::post('/project-statuses', [ProjectStatusController::class, 'store']);
+            Route::put('/project-statuses/{projectStatus}', [ProjectStatusController::class, 'update']);
+            Route::delete('/project-statuses/{projectStatus}', [ProjectStatusController::class, 'destroy']);
+
+            // Settings Management
+            Route::prefix('settings')->group(function () {
+                Route::get('/', [SettingsController::class, 'index']);
+                Route::put('/', [SettingsController::class, 'update']);
+                Route::patch('/{category}', [SettingsController::class, 'updateCategory']);
+                Route::post('/validate', [SettingsController::class, 'validateSettings']);
             });
+
+            // Reporting & Analytics
+            Route::prefix('reports')->group(function () {
+                Route::get('/summary', [ReportController::class, 'getDashboardSummary']);
+                Route::get('/users', [ReportController::class, 'getUserAnalytics']);
+                Route::get('/projects', [ReportController::class, 'getProjectStatistics']);
+                Route::get('/content', [ReportController::class, 'getContentAnalytics']);
+                Route::get('/activity', [ReportController::class, 'getActivityLog']);
+                Route::get('/usage', [ReportController::class, 'getUsageStatistics']);
+                Route::post('/export', [ReportController::class, 'exportReport']);
+                Route::post('/custom', [ReportController::class, 'getCustomReport']);
+            });
+
+            // System Management
+            // Route::prefix('system')->group(function () {
+            //     Route::get('/health', [SystemController::class, 'healthCheck']);
+            //     Route::post('/backup', [SystemController::class, 'createBackup']);
+            //     Route::get('/logs', [SystemController::class, 'getSystemLogs']);
+            //     Route::post('/cache/clear', [SystemController::class, 'clearCache']);
+            // });
         });
     });
 });

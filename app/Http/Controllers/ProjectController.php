@@ -11,19 +11,56 @@ use Illuminate\Foundation\Validation\ValidatesRequests;
 
 class ProjectController extends Controller
 {
-     use AuthorizesRequests, ValidatesRequests;
+    use AuthorizesRequests, ValidatesRequests;
     public function __construct()
     {
         // $this->middleware('auth:sanctum');
     }
 
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $projects = Project::where('user_id', auth()->id())
-            ->withCount('sections')
-            ->get();
+        $query = Project::with(['status', 'teamMembers.user', 'signOffPerson'])
+            ->withCount('sections');
 
-        return response()->json(['data' => $projects]);
+        // If user is not admin, only show projects they are team members of
+        if (!auth()->user()->isAdmin()) {
+            $query->whereHas('teamMembers', function ($q) {
+                $q->where('user_id', auth()->id());
+            });
+        }
+
+        // Apply filters
+        if ($request->has('search')) {
+            $query->where('name', 'like', '%' . $request->search . '%');
+        }
+
+        if ($request->has('status_id')) {
+            $query->where('status_id', $request->status_id);
+        }
+
+        if ($request->has('lead_id')) {
+            $query->whereHas('teamMembers', function ($q) use ($request) {
+                $q->where('user_id', $request->lead_id)->where('role', 'lead');
+            });
+        }
+
+        if ($request->has('team_member_id')) {
+            $query->whereHas('teamMembers', function ($q) use ($request) {
+                $q->where('user_id', $request->team_member_id);
+            });
+        }
+
+        $projects = $query->paginate($request->per_page ?? 10);
+
+        return response()->json([
+            'data' => $projects->items(),
+            'meta' => [
+                'current_page' => $projects->currentPage(),
+                'per_page' => $projects->perPage(),
+                'total' => $projects->total(),
+                'total_pages' => $projects->lastPage(),
+            ]
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -32,32 +69,58 @@ class ProjectController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'language' => 'required|string|max:10',
+            'status_id' => 'required|exists:project_statuses,id',
+            'expected_start_date' => 'nullable|date',
+            'team' => 'required|array|min:1',
+            'team.*.user_id' => 'required|exists:users,id',
+            'team.*.role' => 'required|in:lead,member,viewer',
+            'sign_off_person_id' => 'nullable|exists:users,id',
         ]);
+
+        // Ensure at least one lead
+        $hasLead = collect($validated['team'])->contains('role', 'lead');
+        if (!$hasLead) {
+            return response()->json([
+                'error' => 'Project must have at least one team member with lead role'
+            ], 422);
+        }
 
         $project = Project::create([
-            ...$validated,
-            'user_id' => auth()->id()
+            'name' => $validated['name'],
+            'description' => $validated['description'],
+            'language' => $validated['language'],
+            'status_id' => $validated['status_id'],
+            'expected_start_date' => $validated['expected_start_date'],
+            'sign_off_person_id' => $validated['sign_off_person_id'],
+            'user_id' => auth()->id(),
         ]);
 
-        return response()->json($project, 201);
+        // Add team members
+        foreach ($validated['team'] as $member) {
+            $project->teamMembers()->create($member);
+        }
+
+        return response()->json($project->load(['status', 'teamMembers.user', 'signOffPerson']), 201);
     }
 
-   public function show(Project $project): JsonResponse
+    public function show(Project $project): JsonResponse
     {
-        $this->authorize('view', $project);
-
-        $project->load(['sections.units']);
-        
-        // Debug: try converting to array first
-        try {
-            $projectArray = $project->toArray();
-            return response()->json($projectArray);
-        } catch (\Exception $e) {
+        // Check if user has access to this project
+        $teamMember = $project->teamMembers()->where('user_id', auth()->id())->first();
+        if (!$teamMember) {
             return response()->json([
-                'error' => 'Failed to serialize project',
-                'message' => $e->getMessage()
-            ], 500);
+                'error' => 'Access denied. You are not a member of this project team.'
+            ], 403);
         }
+
+        $project->load([
+            'status', 
+            'teamMembers.user', 
+            'signOffPerson',
+            'sections.units'
+        ]);
+
+        return response()->json($project);
     }
 
     public function update(Request $request, Project $project): JsonResponse
@@ -65,22 +128,16 @@ class ProjectController extends Controller
         $this->authorize('update', $project);
 
         $validated = $request->validate([
-            'name' => 'sometimes|required|string|max:255',
+            'name' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
-            'language' => 'sometimes|required|string|max:10',
+            'language' => 'sometimes|string|max:10',
+            'status_id' => 'sometimes|exists:project_statuses,id',
+            'expected_start_date' => 'nullable|date',
+            'completion_date' => 'nullable|date',
         ]);
 
         $project->update($validated);
 
-        return response()->json($project);
-    }
-
-    public function destroy(Project $project): JsonResponse
-    {
-        $this->authorize('delete', $project);
-
-        $project->delete();
-
-        return response()->json(['message' => 'Project deleted successfully']);
+        return response()->json($project->fresh(['status', 'teamMembers.user', 'signOffPerson']));
     }
 }

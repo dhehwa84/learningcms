@@ -5,6 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class Media extends Model
 {
@@ -21,6 +22,8 @@ class Media extends Model
         'height' => 'integer'
     ];
 
+    protected $appends = ['full_url'];
+
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -31,7 +34,7 @@ class Media extends Model
      */
     public function getFullUrlAttribute()
     {
-        if ($this->file_path) {
+        if ($this->file_path && Storage::disk('minio')->exists($this->file_path)) {
             return Storage::disk('minio')->url($this->file_path);
         }
         
