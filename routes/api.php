@@ -22,6 +22,8 @@ use App\Http\Controllers\ProjectTeamController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Api\Internal\AnalyticsController;
+use App\Http\Controllers\Api\Internal\DashboardController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -158,5 +160,49 @@ Route::prefix('v1')->group(function () {
             //     Route::post('/cache/clear', [SystemController::class, 'clearCache']);
             // });
         });
+
+
     });
+
+    
+        // External Tracking API (Open with API Key)
+        Route::prefix('tracking/v1')->group(function () {
+            Route::post('/session/start', [App\Http\Controllers\Api\External\TrackingController::class, 'startSession']);
+            Route::post('/session/end', [App\Http\Controllers\Api\External\TrackingController::class, 'endSession']);
+            Route::post('/exercise/track', [App\Http\Controllers\Api\External\TrackingController::class, 'trackExercise']);
+            Route::post('/event/track', [App\Http\Controllers\Api\External\TrackingController::class, 'trackEvent']);
+            Route::post('/event/batch', [App\Http\Controllers\Api\External\TrackingController::class, 'trackBatch']);
+            Route::post('/feedback/submit', [App\Http\Controllers\Api\External\TrackingController::class, 'submitFeedback']);
+        });
+
+        // Internal Analytics API (Protected with Auth)
+        Route::prefix('analytics/v1')->middleware(['auth:sanctum'])->group(function () {
+            Route::get('/dashboard/summary', [App\Http\Controllers\Api\Internal\AnalyticsController::class, 'getDashboardSummary']);
+            Route::get('/devices/analytics', [App\Http\Controllers\Api\Internal\AnalyticsController::class, 'getDeviceAnalytics']);
+            Route::get('/projects/analytics', [App\Http\Controllers\Api\Internal\AnalyticsController::class, 'getProjectAnalytics']);
+            Route::get('/exercises/analytics', [App\Http\Controllers\Api\Internal\AnalyticsController::class, 'getExerciseAnalytics']);
+            Route::get('/engagement/analytics', [App\Http\Controllers\Api\Internal\AnalyticsController::class, 'getEngagementAnalytics']);
+            Route::get('/feedback/analytics', [App\Http\Controllers\Api\Internal\AnalyticsController::class, 'getFeedbackAnalytics']);
+            // Main dashboard overview
+            Route::get('/dashboard/overview', [DashboardController::class, 'getOverview']);
+            
+            // Detailed analytics (using your existing AnalyticsController)
+            Route::get('/dashboard/summary', [AnalyticsController::class, 'getDashboardSummary']);
+            Route::get('/sections/analytics', [AnalyticsController::class, 'getSectionAnalytics']);
+            Route::get('/units/analytics', [AnalyticsController::class, 'getUnitAnalytics']);
+            Route::get('/devices/analytics', [AnalyticsController::class, 'getDeviceAnalytics']);
+            Route::get('/projects/analytics', [AnalyticsController::class, 'getProjectAnalytics']);
+            Route::get('/exercises/analytics', [AnalyticsController::class, 'getExerciseAnalytics']);
+            Route::get('/engagement/analytics', [AnalyticsController::class, 'getEngagementAnalytics']);
+            Route::get('/feedback/analytics', [AnalyticsController::class, 'getFeedbackAnalytics']);
+        });
+
+        // API Key Management (Protected with Auth)
+        Route::prefix('admin/tracking-keys')->middleware(['auth:sanctum'])->group(function () {
+            Route::get('/', [App\Http\Controllers\Api\Internal\TrackingApiKeyController::class, 'index']);
+            Route::post('/', [App\Http\Controllers\Api\Internal\TrackingApiKeyController::class, 'store']);
+            Route::put('/{trackingApiKey}', [App\Http\Controllers\Api\Internal\TrackingApiKeyController::class, 'update']);
+            Route::delete('/{trackingApiKey}', [App\Http\Controllers\Api\Internal\TrackingApiKeyController::class, 'destroy']);
+            Route::post('/{trackingApiKey}/regenerate', [App\Http\Controllers\Api\Internal\TrackingApiKeyController::class, 'regenerate']);
+        });
 });
